@@ -241,14 +241,15 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     lun_spec, lun_qty = _find_named_count(wheel_names, text)
     if lun_spec is None:
         # 兼容更多滑轮关键字的模糊匹配：纳米、钢片、轴承轮、合金轮、走珠、滑块
+        # 改进：规格名称可以包含前面的数字和空格，后面的数字只作为数量
         wheel_match = None
         for pattern in [
-            r"([^\s]*?纳米[^\s]*)\s*(\d+)\s*个",
-            r"([^\s]*?钢片[^\s]*)\s*(\d+)\s*个",
-            r"([^\s]*?轴承轮[^\s]*)\s*(\d+)\s*个",
-            r"([^\s]*?合金轮[^\s]*)\s*(\d+)\s*个",
-            r"([^\s]*?走珠[^\s]*)\s*(\d+)\s*个",
-            r"([^\s]*?滑块[^\s]*)\s*(\d+)\s*个",
+            r"([\w\d\u4e00-\u9fff\s]*纳米[\w\u4e00-\u9fff]+?)\s*(\d+)\s*个",
+            r"([\w\d\u4e00-\u9fff\s]*钢片[\w\u4e00-\u9fff]+?)\s*(\d+)\s*个",
+            r"([\w\d\u4e00-\u9fff\s]*轴承轮[\w\u4e00-\u9fff]*?)\s*(\d+)\s*个",
+            r"([\w\d\u4e00-\u9fff\s]*合金轮[\w\u4e00-\u9fff]*?)\s*(\d+)\s*个",
+            r"([\w\d\u4e00-\u9fff\s]*走珠[\w\u4e00-\u9fff]+?)\s*(\d+)\s*个",
+            r"([\w\d\u4e00-\u9fff\s]*滑块[\w\u4e00-\u9fff]+?)\s*(\d+)\s*个",
         ]:
             wheel_match = re.search(pattern, text)
             if wheel_match:
