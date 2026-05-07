@@ -12,7 +12,28 @@ from datetime import datetime
 # ============================
 # 配置
 # ============================
-DESKTOP = os.path.join(os.path.expanduser("~"), "Desktop")
+def get_desktop_path() -> str:
+    """
+    获取当前系统桌面路径。
+    Windows 下通过注册表读取真实桌面路径，
+    兼容桌面被迁移到非默认位置（如 D:\\桌面）的情况。
+    """
+    if sys.platform == "win32":
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
+            )
+            desktop, _ = winreg.QueryValueEx(key, "Desktop")
+            winreg.CloseKey(key)
+            return desktop
+        except Exception:
+            pass
+    # macOS / Linux 或注册表读取失败时的兜底
+    return os.path.join(os.path.expanduser("~"), "Desktop")
+
+DESKTOP = get_desktop_path()
 
 HEADERS = [
     "序号", "日期", "地址", "规格/颜色", "尺寸", "总米数",
