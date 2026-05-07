@@ -223,9 +223,13 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     # --- 封口 ---
     seal_spec, seal_qty = _find_named_count(patterns.get("封口", []), text)
     if seal_spec is None:
-        seal_match = re.search(r"([^\s]+封口)\s*([一二三四五六七八九十\d]+)\s*个", text)
+        # 支持带颜色标签的格式：219封口【黑】10个
+        seal_match = re.search(r"([^\s]+封口)(?:【([^】]*)】)?\s*([一二三四五六七八九十\d]+)\s*个", text)
         if seal_match:
-            seal_spec, seal_qty = seal_match.group(1), parse_quantity(seal_match.group(2))
+            seal_name = seal_match.group(1)
+            color = seal_match.group(2) or ""
+            seal_spec = f"{seal_name}{('【' + color + '】') if color else ''}"
+            seal_qty = parse_quantity(seal_match.group(3))
         else:
             seal_spec, seal_qty = "/", "/"
 
@@ -234,26 +238,22 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     if dan_spec is None:
         dan_match = None
         for pattern in [
-            r"([^\s]+?)\s*单侧码\s*(\d+)\s*个",
-            r"([^\s]+?)\s*双侧码\s*(\d+)\s*个",
-            r"([^\s]+?)\s*单顶码\s*(\d+)\s*个",
-            r"([^\s]+?)\s*双顶码\s*(\d+)\s*个",
+            # 支持带颜色标签的格式：单侧码【黑】20个
+            r"([^\s]+?)\s*(单侧码)(?:【([^】]*)】)?\s*(\d+)\s*个",
+            r"([^\s]+?)\s*(双侧码)(?:【([^】]*)】)?\s*(\d+)\s*个",
+            r"([^\s]+?)\s*(单顶码)(?:【([^】]*)】)?\s*(\d+)\s*个",
+            r"([^\s]+?)\s*(双顶码)(?:【([^】]*)】)?\s*(\d+)\s*个",
         ]:
             dan_match = re.search(pattern, text)
             if dan_match:
                 break
         if dan_match:
-            dan_type, dan_qty = dan_match.group(1).strip(), parse_quantity(dan_match.group(2))
-            if "单侧码" in dan_match.group(0):
-                dan_spec = f"{dan_type} 单侧码"
-            elif "双侧码" in dan_match.group(0):
-                dan_spec = f"{dan_type} 双侧码"
-            elif "单顶码" in dan_match.group(0):
-                dan_spec = f"{dan_type} 单顶码"
-            elif "双顶码" in dan_match.group(0):
-                dan_spec = f"{dan_type} 双顶码"
-            else:
-                dan_spec = f"{dan_type} 单侧码"
+            # group(1): 前缀, group(2): 关键字类型, group(3): 颜色, group(4): 数量
+            prefix = dan_match.group(1).strip()
+            keyword = dan_match.group(2)
+            color = dan_match.group(3) or ""  # 颜色可能为空
+            dan_qty = parse_quantity(dan_match.group(4))
+            dan_spec = f"{prefix} {keyword}{('【' + color + '】') if color else ''}"
         else:
             dan_spec, dan_qty = "/", "/"
 
@@ -261,23 +261,25 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     wheel_names = patterns.get("滑轮", []) + ["轴承轮", "合金轮"]
     lun_spec, lun_qty = _find_named_count(wheel_names, text)
     if lun_spec is None:
-        # 兼容更多滑轮关键字的模糊匹配：纳米、钢片、轴承轮、合金轮、走珠、滑块
-        # 改进：大部分需要数字前缀，但走珠可以无前缀
+        # 支持带颜色标签的格式：10 钢片两轮【白】88个
         wheel_match = None
         for pattern in [
-            # 支持数字+空格+关键词 或 数字汉字混合（如"7字纳米滑块"）
-            r"(\d+\s*[\w\u4e00-\u9fff]*?纳米[\w\u4e00-\u9fff]*?)\s*(\d+)\s*个",
-            r"(\d+\s*[\w\u4e00-\u9fff]*?钢片[\w\u4e00-\u9fff]*?)\s*(\d+)\s*个",
-            r"(\d+\s*[\w\u4e00-\u9fff]*?轴承轮[\w\u4e00-\u9fff]*?)\s*(\d+)\s*个",
-            r"(\d+\s*[\w\u4e00-\u9fff]*?合金轮[\w\u4e00-\u9fff]*?)\s*(\d+)\s*个",
-            r"(\d+\s*[\w\u4e00-\u9fff]*?滑块[\w\u4e00-\u9fff]*?)\s*(\d+)\s*个",
-            r"([\w\u4e00-\u9fff]*?走珠[\w\u4e00-\u9fff]*?)\s*(\d+)\s*个",
+            # 支持数字+空格+关键词 或 数字汉字混合（如"7字纳米滑块"），末尾可选颜色标签
+            r"(\d+\s*[\w\u4e00-\u9fff]*?纳米[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
+            r"(\d+\s*[\w\u4e00-\u9fff]*?钢片[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
+            r"(\d+\s*[\w\u4e00-\u9fff]*?轴承轮[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
+            r"(\d+\s*[\w\u4e00-\u9fff]*?合金轮[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
+            r"(\d+\s*[\w\u4e00-\u9fff]*?滑块[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
+            r"([\w\u4e00-\u9fff]*?走珠[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
         ]:
             wheel_match = re.search(pattern, text)
             if wheel_match:
                 break
         if wheel_match:
-            lun_spec, lun_qty = wheel_match.group(1).strip(), parse_quantity(wheel_match.group(2))
+            lun_name = wheel_match.group(1).strip()
+            color = wheel_match.group(2) or ""
+            lun_spec = f"{lun_name}{('【' + color + '】') if color else ''}"
+            lun_qty = parse_quantity(wheel_match.group(3))
         else:
             lun_spec, lun_qty = "/", "/"
 
@@ -299,9 +301,12 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     mdj_qty = parse_quantity(mdj_match.group(1)) if mdj_match else "/"
 
     # --- 连接器 ---
-    lian_match = re.search(r"连接器\s*([一二三四五六七八九十\d]+)\s*个", text)
+    # 支持带颜色标签的格式：连接器【黑】10个
+    lian_match = re.search(r"连接器(?:【([^】]*)】)?\s*([一二三四五六七八九十\d]+)\s*个", text)
     if lian_match:
-        lian_spec, lian_qty = "连接器", parse_quantity(lian_match.group(1))
+        color = lian_match.group(1) or ""
+        lian_spec = f"连接器{('【' + color + '】') if color else ''}"
+        lian_qty = parse_quantity(lian_match.group(2))
     else:
         lian_spec, lian_qty = "/", "/"
 
