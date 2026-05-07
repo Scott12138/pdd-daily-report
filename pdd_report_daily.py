@@ -131,7 +131,7 @@ ACCESSORY_PATTERNS = {
         "10钢片两轮白色", "15号轴承轮", "轴承轮", "合金轮"
     ],
     "封口": [
-        "F-4", "Z21", "Z22", "002", "006", "219", "大方轨封口"
+        "F-4", "Z21", "Z22", "002", "006", "219", "大方轨封口", "826封口"
     ],
     "安装码": [
         "28单侧码", "28单顶码", "20单顶码", "20单侧码",
@@ -186,13 +186,26 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     text = re.sub(r"\s+", " ", remark.strip())
 
     # --- 规格/颜色：取【】中的颜色，拼上型号前缀 ---
+    # 支持的型号前缀：219、Z21、Z22、002、004、005、006、大方轨、826 等
     color_match = re.search(r"【(.+?)】", text)
     color = color_match.group(1) if color_match else ""
     if color_match:
         prefix = text[:color_match.start()].strip()
+        # 进一步检查前缀是否为空，如果是则尝试匹配常见型号
+        if not prefix:
+            # 尝试匹配大方轨、826等无前缀的型号
+            for model in ["大方轨1001", "大方轨", "826", "219", "Z21", "Z22", "002", "004", "005", "006"]:
+                if text.startswith(model + "【"):
+                    prefix = model
+                    break
         spec_color = f"{prefix}【{color}】" if prefix else f"【{color}】"
     else:
+        # 没有【】时，尝试匹配常见型号开头
         spec_color = "/"
+        for model in ["大方轨1001", "大方轨", "826", "219", "Z21", "Z22", "002", "004", "005", "006"]:
+            if text.startswith(model):
+                spec_color = model
+                break
 
     # --- 尺寸 & 总米数：提取所有 "X米*Y根"，保留原分隔符格式 ---
     size_pattern = re.compile(r"([\d.]+)米\s*\*\s*(\d+)\s*根")
@@ -258,7 +271,7 @@ def bei_zhu_chai_jie(remark: str) -> dict:
             dan_spec, dan_qty = "/", "/"
 
     # --- 滑轮 ---
-    wheel_names = patterns.get("滑轮", []) + ["轴承轮", "合金轮"]
+    wheel_names = patterns.get("滑轮", []) + ["轴承轮", "合金轮", "8号纳米"]
     lun_spec, lun_qty = _find_named_count(wheel_names, text)
     if lun_spec is None:
         # 支持带颜色标签的格式：10 钢片两轮【白】88个
@@ -301,12 +314,20 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     mdj_qty = parse_quantity(mdj_match.group(1)) if mdj_match else "/"
 
     # --- 连接器 ---
-    # 支持带颜色标签的格式：连接器【黑】10个
-    lian_match = re.search(r"连接器(?:【([^】]*)】)?\s*([一二三四五六七八九十\d]+)\s*个", text)
+    # 支持多种型号前缀：F630、F525、F轨、1001、219、WR303、826 等
+    lian_patterns = [
+        r"(F630连接器|F525连接器|F轨连接器|1001连接器|219连接器|WR303连接器|826连接器|大方轨1001连接器|大方轨连接器|连接器)(?:【([^】]*)】)?\s*([一二三四五六七八九十\d]+)\s*个"
+    ]
+    lian_match = None
+    for pattern in lian_patterns:
+        lian_match = re.search(pattern, text)
+        if lian_match:
+            break
     if lian_match:
-        color = lian_match.group(1) or ""
-        lian_spec = f"连接器{('【' + color + '】') if color else ''}"
-        lian_qty = parse_quantity(lian_match.group(2))
+        lian_name = lian_match.group(1)
+        color = lian_match.group(2) or ""
+        lian_spec = f"{lian_name}{('【' + color + '】') if color else ''}"
+        lian_qty = parse_quantity(lian_match.group(3))
     else:
         lian_spec, lian_qty = "/", "/"
 
