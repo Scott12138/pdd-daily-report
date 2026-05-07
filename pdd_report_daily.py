@@ -343,9 +343,9 @@ def process_row(row_data: dict) -> dict:
     tracking_no = str(row_data.get("快递单号", "")).strip()
     ship_time = str(row_data.get("发货时间", "")).strip()
 
-    # 1. 快递单号/订单编号 = 快递商家 + 订单号
+    # 1. 快递单号/订单编号 = 快递公司名称 + 快递单号 + "订单号：" + 订单号
     express_company = detect_express_company(tracking_no)
-    new_tracking = f"{express_company}{order_id}" if express_company else order_id
+    new_tracking = f"{express_company}{tracking_no}订单号：{order_id}" if tracking_no else f"订单号：{order_id}"
 
     # 2. 日期
     new_date = format_date(ship_time)
