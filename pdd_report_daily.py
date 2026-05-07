@@ -417,6 +417,14 @@ def scan_lzc_files() -> str:
         return ""
 
 
+def clean_header(header: str) -> str:
+    """清理表头中的BOM、制表符和前后空白字符"""
+    if not header:
+        return ""
+    # 移除BOM字符 (\ufeff)、制表符，并去除首尾空白
+    return header.replace('\ufeff', '').replace('\t', '').strip()
+
+
 def read_source_file(file_path: str) -> list:
     """
     读取源Excel或CSV文件，逐行提取数据
@@ -426,10 +434,10 @@ def read_source_file(file_path: str) -> list:
     
     if file_ext == '.csv':
         # 处理CSV文件
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8-sig') as f:  # utf-8-sig 自动处理BOM
             reader = csv.DictReader(f)
             # 清理表头中的制表符和空白字符
-            reader.fieldnames = [h.strip().replace('\t', '') if h else '' for h in reader.fieldnames]
+            reader.fieldnames = [clean_header(h) for h in reader.fieldnames]
             all_rows = list(reader)
     else:
         # 处理Excel文件
@@ -438,7 +446,7 @@ def read_source_file(file_path: str) -> list:
         
         # 获取表头行
         header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
-        headers = [str(h).strip().replace('\t', '') if h is not None else "" for h in header_row]
+        headers = [clean_header(str(h)) if h is not None else "" for h in header_row]
         
         all_rows = []
         for row in ws.iter_rows(min_row=2, values_only=True):
