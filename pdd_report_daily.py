@@ -428,6 +428,8 @@ def read_source_file(file_path: str) -> list:
         # 处理CSV文件
         with open(file_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
+            # 清理表头中的制表符和空白字符
+            reader.fieldnames = [h.strip().replace('\t', '') if h else '' for h in reader.fieldnames]
             all_rows = list(reader)
     else:
         # 处理Excel文件
@@ -436,7 +438,7 @@ def read_source_file(file_path: str) -> list:
         
         # 获取表头行
         header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
-        headers = [str(h) if h is not None else "" for h in header_row]
+        headers = [str(h).strip().replace('\t', '') if h is not None else "" for h in header_row]
         
         all_rows = []
         for row in ws.iter_rows(min_row=2, values_only=True):
