@@ -12,7 +12,7 @@ from datetime import datetime
 # ============================
 # 配置
 # ============================
-DESKTOP = os.path.expanduser("~/Desktop")
+DESKTOP = os.path.join(os.path.expanduser("~"), "Desktop")
 
 HEADERS = [
     "序号", "日期", "地址", "规格/颜色", "尺寸", "总米数",
