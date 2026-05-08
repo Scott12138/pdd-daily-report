@@ -207,15 +207,26 @@ def bei_zhu_chai_jie(remark: str) -> dict:
                 spec_color = model
                 break
 
-    # --- 尺寸 & 总米数：提取所有 "X米*Y根"，保留原分隔符格式 ---
-    size_pattern = re.compile(r"([\d.]+)米\s*\*\s*(\d+)\s*根")
+    # --- 尺寸 & 总米数：支持 "X米*Y根" 和 "(a+b)米*Y根" 两种格式 ---
+    # 支持半角() 和全角（）括号；分组1：括号表达式（如 "1.585+1.2"）；分组2：纯数字（如 "1.2"）；分组3：根数
+    size_pattern = re.compile(r'(?:[()（）]([\d.+]+)[()（）]|([\d.]+))\s*米\s*\*\s*(\d+)\s*根')
     size_matches = size_pattern.findall(text)
     if size_matches:
-        sizes = [f"{m}米*{n}根" for m, n in size_matches]
-        size_str = "\n".join(sizes)
-        total_m = sum(float(m) * int(n) for m, n in size_matches)
-        total_m_rounded = round(total_m, 2)
-        total_m_str = str(int(total_m_rounded)) if total_m_rounded == int(total_m_rounded) else str(total_m_rounded)
+        sizes = []
+        total_m = 0.0
+        for m_expr, m_simple, n_str in size_matches:
+            n = int(n_str)
+            if m_expr:   # (a+b+...)米 格式
+                meters = sum(float(x) for x in m_expr.split('+'))
+                sizes.append(f"({m_expr})米*{n}根")
+            else:         # 普通 X米 格式
+                meters = float(m_simple)
+                sizes.append(f"{m_simple}米*{n}根")
+            total_m += meters * n
+        size_str = "，".join(sizes)
+        total_m_rounded = round(total_m, 3)   # 保留3位小数，避免 3.985 被误四舍五入
+        # 去除末尾无意义的 0，但保留有效精度
+        total_m_str = f"{total_m_rounded}".rstrip('0').rstrip('.') if '.' in str(total_m_rounded) else str(int(total_m_rounded))
     else:
         size_str, total_m_str = "/", "/"
 
