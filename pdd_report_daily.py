@@ -36,14 +36,14 @@ def get_desktop_path() -> str:
 DESKTOP = get_desktop_path()
 
 HEADERS = [
-    "序号", "日期", "地址", "规格/颜色", "尺寸", "总米数",
+    "序号", "日期", "地址", "规格", "颜色", "尺寸", "总米数",
     "封口", "封口个数", "滑轮", "滑轮个数", "膨胀螺丝/套",
     "免钉胶/套", "安装码", "安装码数量", "连接器", "连接器数量",
     "配件", "配件数量", "备注", "订单号", "快递单号/订单编号"
 ]
 
 OUTPUT_KEYS = [
-    "序号", "日期", "地址", "规格/颜色", "尺寸", "总米数",
+    "序号", "日期", "地址", "规格", "颜色", "尺寸", "总米数",
     "封口", "封口个数", "滑轮", "滑轮个数", "膨胀螺丝/套",
     "免钉胶/套", "安装码", "安装码数量", "连接器", "连接器数量",
     "配件", "配件数量", "备注", "订单号", "快递单号/订单编号"
@@ -160,7 +160,8 @@ def bei_zhu_chai_jie(remark: str) -> dict:
      219封口 10个 13 单侧码20个 10 钢片两轮88个 膨胀螺丝 45套"
 
     拆解规则（对照案例表）：
-      规格/颜色   → 开头型号【颜色】，如 "219【白】"
+      规格        → 开头型号前缀，如 "219"（不含【】）
+      颜色        → 【颜色】标签，如 "【白】"（无颜色时为 /）
       尺寸        → 所有 "X米*Y根" 片段，用换行符拼接
       总米数      → 自动累加 X*Y
       封口        → "X封口 Y个" → 规格="X封口"，个数=Y
@@ -175,7 +176,7 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     """
     if not remark or not remark.strip():
         return {
-            "规格/颜色": "/", "尺寸": "/", "总米数": "/",
+            "规格": "/", "颜色": "/", "尺寸": "/", "总米数": "/",
             "封口": "/", "个数": "/", "滑轮": "/", "个数": "/",
             "膨胀螺丝/套": "/", "安装码": "/", "数量": "/",
             "连接器": "/", "数量": "/", "配件": "/", "数量": "/",
@@ -185,26 +186,27 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     # 关键：把换行符等空白统一成空格，避免 \S 跨行匹配导致数值错位
     text = re.sub(r"\s+", " ", remark.strip())
 
-    # --- 规格/颜色：取【】中的颜色，拼上型号前缀 ---
+    # --- 规格 & 颜色：拆分为两个独立字段 ---
     # 支持的型号前缀：219、Z21、Z22、002、004、005、006、大方轨、826 等
     color_match = re.search(r"【(.+?)】", text)
-    color = color_match.group(1) if color_match else ""
+    color_value = color_match.group(1) if color_match else ""
     if color_match:
         prefix = text[:color_match.start()].strip()
         # 进一步检查前缀是否为空，如果是则尝试匹配常见型号
         if not prefix:
-            # 尝试匹配大方轨、826等无前缀的型号
-            for model in ["大方轨1001", "大方轨", "826", "219", "Z21", "Z22", "002", "004", "005", "006"]:
+            for model in ["大方轨1001", "大方轨", "826", "219", "Z21", "Z22", "002", "004", "005", "006", "F-4", "骏派TS420"]:
                 if text.startswith(model + "【"):
                     prefix = model
                     break
-        spec_color = f"{prefix}【{color}】" if prefix else f"【{color}】"
+        spec = prefix  # 规格 = 前缀型号（不含颜色标签）
+        color = f"【{color_value}】"  # 颜色 = 完整【颜色】
     else:
-        # 没有【】时，尝试匹配常见型号开头
-        spec_color = "/"
-        for model in ["大方轨1001", "大方轨", "826", "219", "Z21", "Z22", "002", "004", "005", "006"]:
+        # 没有【】时，尝试匹配常见型号开头作为规格
+        spec = "/"
+        color = "/"
+        for model in ["大方轨1001", "大方轨", "826", "219", "Z21", "Z22", "002", "004", "005", "006", "F-4", "骏派TS420"]:
             if text.startswith(model):
-                spec_color = model
+                spec = model
                 break
 
     # --- 尺寸 & 总米数：支持 "X米*Y根" 和 "(a+b)米*Y根" 两种格式 ---
@@ -218,15 +220,17 @@ def bei_zhu_chai_jie(remark: str) -> dict:
             n = int(n_str)
             if m_expr:   # (a+b+...)米 格式
                 meters = sum(float(x) for x in m_expr.split('+'))
-                sizes.append(f"({m_expr})米*{n}根")
+                # 括号内各项也统一保留3位小数展示
+                parts = [f"{float(x):.3f}" for x in m_expr.split('+')]
+                sizes.append(f"({'+'.join(parts)})米*{n}根")
             else:         # 普通 X米 格式
                 meters = float(m_simple)
-                sizes.append(f"{m_simple}米*{n}根")
+                sizes.append(f"{meters:.3f}米*{n}根")
             total_m += meters * n
         size_str = "，".join(sizes)
-        total_m_rounded = round(total_m, 3)   # 保留3位小数，避免 3.985 被误四舍五入
-        # 去除末尾无意义的 0，但保留有效精度
-        total_m_str = f"{total_m_rounded}".rstrip('0').rstrip('.') if '.' in str(total_m_rounded) else str(int(total_m_rounded))
+        total_m_rounded = round(total_m, 3)
+        # 统一强制保留3位小数
+        total_m_str = f"{total_m_rounded:.3f}"
     else:
         size_str, total_m_str = "/", "/"
 
@@ -343,7 +347,8 @@ def bei_zhu_chai_jie(remark: str) -> dict:
         pei_spec, pei_qty = "/", "/"
 
     return {
-        "规格/颜色": spec_color,
+        "规格":        spec,
+        "颜色":        color,
         "尺寸":       size_str,
         "总米数":     total_m_str,
         "封口":       seal_spec,
@@ -394,7 +399,8 @@ def process_row(row_data: dict) -> dict:
         "序号":              "",   # 序号由 main() 调用方填入
         "日期":              _f(new_date),
         "地址":              "/",
-        "规格/颜色":         _f(parsed.get("规格/颜色", "")),
+        "规格":              _f(parsed.get("规格", "")),
+        "颜色":              _f(parsed.get("颜色", "")),
         "尺寸":              _f(parsed.get("尺寸", "")),
         "总米数":            _f(parsed.get("总米数", "")),
         "封口":              _f(parsed.get("封口", "")),
