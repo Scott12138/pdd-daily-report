@@ -257,54 +257,49 @@ def bei_zhu_chai_jie(remark: str) -> dict:
         else:
             seal_spec, seal_qty = "/", "/"
 
-    # --- 安装码 ---
-    dan_spec, dan_qty = _find_named_count(patterns.get("安装码", []), text)
-    if dan_spec is None:
-        dan_match = None
-        for pattern in [
-            # 支持带颜色标签的格式：单侧码【黑】20个
-            r"([^\s]+?)\s*(单侧码)(?:【([^】]*)】)?\s*(\d+)\s*个",
-            r"([^\s]+?)\s*(双侧码)(?:【([^】]*)】)?\s*(\d+)\s*个",
-            r"([^\s]+?)\s*(单顶码)(?:【([^】]*)】)?\s*(\d+)\s*个",
-            r"([^\s]+?)\s*(双顶码)(?:【([^】]*)】)?\s*(\d+)\s*个",
-        ]:
-            dan_match = re.search(pattern, text)
-            if dan_match:
-                break
-        if dan_match:
-            # group(1): 前缀, group(2): 关键字类型, group(3): 颜色, group(4): 数量
-            prefix = dan_match.group(1).strip()
-            keyword = dan_match.group(2)
-            color = dan_match.group(3) or ""  # 颜色可能为空
-            dan_qty = parse_quantity(dan_match.group(4))
-            dan_spec = f"{prefix} {keyword}{('【' + color + '】') if color else ''}"
-        else:
-            dan_spec, dan_qty = "/", "/"
+    # --- 安装码（支持多款，格内换行） ---
+    # 统一用一条 findall 正则抓取全部安装码，顺序与备注一致
+    # group(1): 前缀数字/字母, group(2): 码类型关键字, group(3): 颜色(可空), group(4): 数量
+    _dan_pattern = re.compile(
+        r"([^\s，,]+?)\s*(单侧码|双侧码|单顶码|双顶码)(?:【([^】]*)】)?\s*(\d+)\s*个"
+    )
+    dan_all = _dan_pattern.findall(text)
+    if dan_all:
+        dan_specs, dan_qtys = [], []
+        for prefix, keyword, color, qty in dan_all:
+            color_tag = f"【{color}】" if color else ""
+            dan_specs.append(f"{prefix.strip()} {keyword}{color_tag}")
+            dan_qtys.append(parse_quantity(qty))
+        dan_spec = "\n".join(dan_specs)
+        dan_qty  = "\n".join(dan_qtys)
+    else:
+        dan_spec, dan_qty = "/", "/"
 
-    # --- 滑轮 ---
-    wheel_names = patterns.get("滑轮", []) + ["轴承轮", "合金轮", "8号纳米"]
-    lun_spec, lun_qty = _find_named_count(wheel_names, text)
-    if lun_spec is None:
-        # 支持带颜色标签的格式：10 钢片两轮【白】88个
-        wheel_match = None
-        for pattern in [
-            # 支持数字+空格+关键词 或 数字汉字混合（如"7字纳米滑块"），末尾可选颜色标签
-            r"(\d+\s*[\w\u4e00-\u9fff]*?纳米[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
-            r"(\d+\s*[\w\u4e00-\u9fff]*?钢片[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
-            r"(\d+\s*[\w\u4e00-\u9fff]*?轴承轮[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
-            r"(\d+\s*[\w\u4e00-\u9fff]*?合金轮[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
-            r"(\d+\s*[\w\u4e00-\u9fff]*?滑块[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
-            r"([\w\u4e00-\u9fff]*?走珠[\w\u4e00-\u9fff]*?)(?:【([^】]*)】)?\s*(\d+)\s*个",
-        ]:
-            wheel_match = re.search(pattern, text)
-            if wheel_match:
-                break
-        if wheel_match:
-            lun_name = wheel_match.group(1).strip()
-            color = wheel_match.group(2) or ""
-            lun_spec = f"{lun_name}{('【' + color + '】') if color else ''}"
-            lun_qty = parse_quantity(wheel_match.group(3))
-        else:
+    # --- 滑轮（支持多款，格内换行） ---
+    # 用一条 findall 正则抓取全部滑轮条目
+    # group(1): 型号名称(含可选前缀数字), group(2): 颜色(可空), group(3): 数量
+    # 前缀数字可选（如"轴承轮" / "10 钢片两轮" 均可匹配）
+    _wheel_pattern = re.compile(
+        r"(\d*\s*[\w\u4e00-\u9fff]*?"
+        r"(?:纳米|钢片|轴承轮|合金轮|滑块|走珠)"
+        r"[\w\u4e00-\u9fff]*?)"
+        r"(?:【([^】]*)】)?"
+        r"\s*(\d+)\s*个"
+    )
+    wheel_all = _wheel_pattern.findall(text)
+    if wheel_all:
+        lun_specs, lun_qtys = [], []
+        for name, color, qty in wheel_all:
+            color_tag = f"【{color}】" if color else ""
+            lun_specs.append(f"{name.strip()}{color_tag}")
+            lun_qtys.append(parse_quantity(qty))
+        lun_spec = "\n".join(lun_specs)
+        lun_qty  = "\n".join(lun_qtys)
+    else:
+        # 兜底：从 patterns 字典里的自定义名称里找
+        wheel_names = patterns.get("滑轮", []) + ["轴承轮", "合金轮", "8号纳米"]
+        lun_spec, lun_qty = _find_named_count(wheel_names, text)
+        if lun_spec is None:
             lun_spec, lun_qty = "/", "/"
 
     # --- 膨胀螺丝 ---
