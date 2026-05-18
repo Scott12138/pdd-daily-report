@@ -255,8 +255,8 @@ def bei_zhu_chai_jie(remark: str) -> dict:
         seal_match = re.search(r"([^\s]+封口)(?:【([^】]*)】)?\s*([一二三四五六七八九十\d]+)\s*个", text)
         if seal_match:
             seal_name = seal_match.group(1)
-            color = seal_match.group(2) or ""
-            seal_spec = f"{seal_name}{('【' + color + '】') if color else ''}"
+            seal_color = seal_match.group(2) or ""
+            seal_spec = f"{seal_name}{('【' + seal_color + '】') if seal_color else ''}"
             seal_qty = parse_quantity(seal_match.group(3))
         else:
             seal_spec, seal_qty = "/", "/"
@@ -270,8 +270,8 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     dan_all = _dan_pattern.findall(text)
     if dan_all:
         dan_specs, dan_qtys = [], []
-        for prefix, keyword, color, qty in dan_all:
-            color_tag = f"【{color}】" if color else ""
+        for prefix, keyword, dan_color, qty in dan_all:
+            color_tag = f"【{dan_color}】" if dan_color else ""
             dan_specs.append(f"{prefix.strip()} {keyword}{color_tag}")
             dan_qtys.append(parse_quantity(qty))
         dan_spec = "\n".join(dan_specs)
@@ -293,8 +293,8 @@ def bei_zhu_chai_jie(remark: str) -> dict:
     wheel_all = _wheel_pattern.findall(text)
     if wheel_all:
         lun_specs, lun_qtys = [], []
-        for name, color, qty in wheel_all:
-            color_tag = f"【{color}】" if color else ""
+        for name, wheel_color, qty in wheel_all:
+            color_tag = f"【{wheel_color}】" if wheel_color else ""
             lun_specs.append(f"{name.strip()}{color_tag}")
             lun_qtys.append(parse_quantity(qty))
         lun_spec = "\n".join(lun_specs)
@@ -335,8 +335,8 @@ def bei_zhu_chai_jie(remark: str) -> dict:
             break
     if lian_match:
         lian_name = lian_match.group(1)
-        color = lian_match.group(2) or ""
-        lian_spec = f"{lian_name}{('【' + color + '】') if color else ''}"
+        lian_color = lian_match.group(2) or ""
+        lian_spec = f"{lian_name}{('【' + lian_color + '】') if lian_color else ''}"
         lian_qty = parse_quantity(lian_match.group(3))
     else:
         lian_spec, lian_qty = "/", "/"
