@@ -4,8 +4,10 @@
 import os
 import sys
 import csv
+from typing import Optional
 from tkinter import Tk, filedialog
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, Alignment, Border, Side
 from datetime import datetime
 
 
@@ -52,6 +54,11 @@ OUTPUT_KEYS = [
 # 有效订单状态（只保留这些状态的行）
 VALID_STATUSES = {"已发货，待收货", "已发货，退款成功", "已收货", "已收货，退款成功"}
 
+# 无效备注关键词：备注里出现这些词的订单并未实际发单，
+# 整条视为无效数据，既不进明细表，也不进配件统计表。
+# 注意：不要加入"不要"（备注里常见"不要发错/不要切错"，是正常订单的叮嘱）。
+INVALID_REMARK_KEYWORDS = ("废除", "作废", "废单", "暂不发货", "取消")
+
 # 快递商家识别映射
 EXPRESS_MAP = {
     "YT": "圆通",
@@ -68,6 +75,10 @@ CHINESE_NUMBERS = {
     "三十": 30, "四十": 40, "五十": 50, "六十": 60, "七十": 70,
     "八十": 80, "九十": 90, "百": 100
 }
+
+
+# 配件统计表的品类顺序（与明细表字段一一对应）
+STAT_CATEGORIES = ["封口", "滑轮", "膨胀螺丝/套", "免钉胶/套", "安装码", "连接器", "配件"]
 
 
 # ============================
@@ -431,6 +442,123 @@ def create_output_file() -> Workbook:
     return wb
 
 
+# ============================
+# 配件数量统计（新增功能，不影响原明细输出）
+# ============================
+
+def _to_int(qty) -> Optional[int]:
+    """把数量安全转成整数，转不了（如 '/'）返回 None"""
+    try:
+        return int(str(qty).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def collect_stats(stats: dict, processed: dict):
+    """
+    把一行明细中的配件数量累加进统计字典。
+
+    stats 结构：{品类: {细分种类: 使用总数}}
+    数据直接取自明细表的解析结果，保证统计与明细永远一致。
+    """
+    def add(cat: str, name, qty):
+        n = _to_int(qty)
+        if n is None or n <= 0:
+            return
+        if not name:
+            return
+        # 规范空白字符（多个空格/换行合并为一个空格）
+        name = " ".join(str(name).split())
+        if not name or name == "/":
+            return
+        bucket = stats.setdefault(cat, {})
+        bucket[name] = bucket.get(name, 0) + n
+
+    # 封口（单条目）
+    add("封口", processed.get("封口"), processed.get("封口个数"))
+
+    # 滑轮（多条目，格内换行，规格与数量逐行对应）
+    lun_specs = str(processed.get("滑轮", "/")).split("\n")
+    lun_qtys = str(processed.get("滑轮个数", "/")).split("\n")
+    if len(lun_qtys) < len(lun_specs):
+        lun_qtys += ["/"] * (len(lun_specs) - len(lun_qtys))
+    for s, q in zip(lun_specs, lun_qtys):
+        add("滑轮", s, q)
+
+    # 膨胀螺丝 / 免钉胶（无细分型号，只有总量，细分种类填品类名）
+    add("膨胀螺丝/套", "膨胀螺丝", processed.get("膨胀螺丝/套"))
+    add("免钉胶/套", "免钉胶", processed.get("免钉胶/套"))
+
+    # 安装码（多条目，格内换行）
+    dan_specs = str(processed.get("安装码", "/")).split("\n")
+    dan_qtys = str(processed.get("安装码数量", "/")).split("\n")
+    if len(dan_qtys) < len(dan_specs):
+        dan_qtys += ["/"] * (len(dan_specs) - len(dan_qtys))
+    for s, q in zip(dan_specs, dan_qtys):
+        add("安装码", s, q)
+
+    # 连接器 / 配件（单条目）
+    add("连接器", processed.get("连接器"), processed.get("连接器数量"))
+    add("配件", processed.get("配件"), processed.get("配件数量"))
+
+
+def create_stats_workbook(stats: dict) -> Workbook:
+    """
+    根据统计字典生成配件统计表工作簿。
+
+    版式（对照案例图）：
+      第1行：A列留空 | B1 细分种类 | C1 使用总数
+      每个品类一块：A列品类名纵向合并居中，B列细分种类，C列使用总数
+      品类块之间空一行；同一品类内按使用总数从高到低排序
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "配件统计"
+
+    thin = Side(style="thin")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center")
+    right = Alignment(horizontal="right", vertical="center")
+
+    # 表头
+    ws.cell(row=1, column=1).border = border
+    for col, title in ((2, "细分种类"), (3, "使用总数")):
+        cell = ws.cell(row=1, column=col, value=title)
+        cell.font = Font(bold=True)
+        cell.alignment = center
+        cell.border = border
+
+    row = 2
+    for cat in STAT_CATEGORIES:
+        items = stats.get(cat)
+        if not items:
+            continue
+        # 同品类内按使用总数从高到低
+        sorted_items = sorted(items.items(), key=lambda kv: kv[1], reverse=True)
+        start = row
+        for name, total in sorted_items:
+            b = ws.cell(row=row, column=2, value=name)
+            b.border = border
+            c = ws.cell(row=row, column=3, value=total)
+            c.border = border
+            c.alignment = right
+            row += 1
+        end = row - 1
+        # 先给品类列每个格子加边框，再纵向合并品类名
+        for r in range(start, end + 1):
+            ws.cell(row=r, column=1).border = border
+        ws.merge_cells(start_row=start, start_column=1, end_row=end, end_column=1)
+        cat_cell = ws.cell(row=start, column=1, value=cat)
+        cat_cell.alignment = center
+        row += 1  # 品类块之间空一行
+
+    # 列宽
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 26
+    ws.column_dimensions["C"].width = 12
+    return wb
+
+
 def scan_lzc_files() -> str:
     """让用户选择输入文件"""
     root = Tk()
@@ -493,12 +621,21 @@ def read_source_file(file_path: str) -> list:
     
     # 过滤有效订单状态，并丢弃备注为空的行
     valid_rows = []
+    invalid_cnt = 0
     for row_dict in all_rows:
         order_status = str(row_dict.get("订单状态", "")).strip()
         remark = str(row_dict.get("商家备注", "")).strip()
-        if order_status in VALID_STATUSES and remark:
-            valid_rows.append(row_dict)
-    
+        if order_status not in VALID_STATUSES or not remark:
+            continue
+        # 备注含"废除"等无效标记 → 该单并未实际发单，整条丢弃
+        if any(kw in remark for kw in INVALID_REMARK_KEYWORDS):
+            invalid_cnt += 1
+            continue
+        valid_rows.append(row_dict)
+
+    if invalid_cnt:
+        print(f"   已过滤无效备注（{'/'.join(INVALID_REMARK_KEYWORDS)}）：{invalid_cnt} 条")
+
     return valid_rows
 
 
@@ -554,19 +691,32 @@ def main():
     # Step 4: 处理每行数据并写入新表
     print("\n⚙️  Step 4: 处理数据并写入新表...")
     seq = 1
+    stats = {}  # 配件统计：{品类: {细分种类: 使用总数}}
     for row_data in source_rows:
         processed = process_row(row_data)
         processed["序号"] = seq
         row_values = [str(processed.get(key, "/")) for key in OUTPUT_KEYS]
         seq += 1
         out_ws.append(row_values)
+        collect_stats(stats, processed)
         print(f"   [{seq - 1}] 订单号: {row_data.get('订单号', '-')} | "
               f"状态: {row_data.get('订单状态', '-')} | "
               f"备注: {str(row_data.get('商家备注', '-'))[:20]}...")
 
-    # Step 5: 保存
+    # Step 5: 保存明细表
     print("\n💾 Step 5: 保存文件...")
     save_output(out_wb, OUTPUT_FILE)
+
+    # Step 6: 生成配件统计表（新增功能，独立文件，不影响原明细表）
+    print("\n📊 Step 6: 生成配件统计表...")
+    if stats:
+        stats_file = os.path.join(DESKTOP, f"{input_filename}配件统计表.xlsx")
+        stats_wb = create_stats_workbook(stats)
+        stats_wb.save(stats_file)
+        print(f"✅ 配件统计表已保存至：{stats_file}")
+    else:
+        print("⚠️  没有统计到任何配件数量，跳过统计表生成。")
+
     print("\n🎉 处理完成！")
 
 
